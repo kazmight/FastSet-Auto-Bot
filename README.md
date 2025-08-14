@@ -3,13 +3,13 @@ A simple, scriptable FastSet testnet transaction runner with a terminal UI (TUI)
 It randomizes recipients from wallet.txt, handles faucet when balance is low, and lets you control batch size & per-tx delay from inside the UI.
 
 # Features
-✅ Multi-account support (via .env)
-✅ Randomized recipients from wallet.txt (skips own addresses)
-✅ Built-in faucet claim if balance insufficient
-✅ UI dashboard (balances, tokens, logs, stats, activity)
-✅ In-UI modal to change number of transactions and delay
-✅ Optional HTTPS/SOCKS proxy per account
-✅ Clear, colorized logs to screen + file
+- ✅ Multi-account support (via .env)
+- ✅ Randomized recipients from wallet.txt (skips own addresses)
+- ✅ Built-in faucet claim if balance insufficient
+- ✅ UI dashboard (balances, tokens, logs, stats, activity)
+- ✅ In-UI modal to change number of transactions and delay
+- ✅ Optional HTTPS/SOCKS proxy per account
+- ✅ Clear, colorized logs to screen + file
 
 # Requirements
 Node.js v18+ (recommended v20+)
