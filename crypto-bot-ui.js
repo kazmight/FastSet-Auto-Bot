@@ -1,9 +1,9 @@
-const fs = require('fs');
-const path = require('path');
-const EventEmitter = require('events');
-const blessed = require('blessed');
-const figlet = require('figlet');
-const moment = require('moment');
+import fs from 'fs';
+import path from 'path';
+import { EventEmitter } from 'events';
+import blessed from 'blessed';
+import figlet from 'figlet';
+import moment from 'moment';
 
 class CryptoBotUI extends EventEmitter {
   constructor(options = {}) {
@@ -37,14 +37,11 @@ class CryptoBotUI extends EventEmitter {
       ],
     };
 
-
     this.logFile = path.resolve(process.cwd(), options.logFile || process.env.LOG_FILE || 'transactions.log');
     this._logStream = fs.createWriteStream(this.logFile, { flags: 'a' });
     this._mirrorConsole = !!options.mirrorConsole;
 
-
-    this.tickerSpeed  = Number(options.tickerSpeed || 200); 
-
+    this.tickerSpeed  = Number(options.tickerSpeed || 200);
     this.tickerColor1 = options.tickerColor1 || 'cyan';
     this.tickerColor2 = options.tickerColor2 || 'yellow';
 
@@ -59,12 +56,10 @@ class CryptoBotUI extends EventEmitter {
     this._tickerTape = '';
     this._tickerMask = [];
 
-
     this.bannerTexts = options.bannerTexts || ['INVICTUSLABS', 'TESTNET', 'AUTOMATION'];
     this.bannerFont = options.bannerFont || 'ANSI Shadow';
 
     const C = this.opts.colors;
-
 
     this.isActive = false;
     this.transactionCount = 0;
@@ -74,21 +69,10 @@ class CryptoBotUI extends EventEmitter {
     this.currentGasPrice = 0;
     this._intervals = new Set();
 
-
     this.nativeSymbol = options.nativeSymbol || 'NATIVE';
-    this.walletData = {
-      address: '-',
-      nativeBalance: '-',
-      network: '-',
-      gasPrice: '-',
-      nonce: '-',
-    };
+    this.walletData = { address: '-', nativeBalance: '-', network: '-', gasPrice: '-', nonce: '-' };
 
-
-    this.tokens = Array.from({ length: 10 }).map(() => ({
-      enabled: true, name: '-', symbol: '-', balance: '-'
-    }));
-
+    this.tokens = Array.from({ length: 10 }).map(() => ({ enabled: true, name: '-', symbol: '-', balance: '-' }));
 
     this.screen = blessed.screen({
       smartCSR: true,
@@ -99,7 +83,6 @@ class CryptoBotUI extends EventEmitter {
     });
     this.screen.key(['escape', 'q', 'C-c'], () => this.destroy());
 
-
     this.banner = blessed.box({
       parent: this.screen,
       top: 0, left: 'center', width: '100%', height: 6,
@@ -108,12 +91,10 @@ class CryptoBotUI extends EventEmitter {
     });
     this._setBannerFrame(this.bannerTexts[0], this.bannerFont, C.primary);
 
-
     this.mainContainer = blessed.box({
       parent: this.screen, top: 6, left: 0, width: '100%', height: '100%-9',
       style: { bg: C.background }
     });
-
 
     this.walletBox = blessed.box({
       parent: this.mainContainer, label: ' Wallet Information ',
@@ -123,7 +104,6 @@ class CryptoBotUI extends EventEmitter {
       tags: true, padding: 1
     });
 
-
     this.tokenBox = blessed.box({
       parent: this.mainContainer, label: ' Token Information ',
       top: 0, left: '50%', width: '50%', height: '40%',
@@ -131,7 +111,6 @@ class CryptoBotUI extends EventEmitter {
       style: { fg: C.text, border: { fg: C.secondary }, label: { fg: C.secondary, bold: true } },
       tags: true, padding: 1
     });
-
 
     this.menuBox = blessed.box({
       parent: this.mainContainer, label: ' Transaction Menu ',
@@ -144,7 +123,7 @@ class CryptoBotUI extends EventEmitter {
       parent: this.menuBox, top: 0, left: 0, width: '100%-2', height: '100%-2',
       keys: true, vi: true, mouse: true, tags: true,
       scrollbar: { ch: ' ', track: { bg: C.background }, style: { bg: C.cyan } },
-      style: { selected: { bg: C.info, fg: 'black', bold: true }, item: { hover: { bg: C.background } } },
+      style: { selected: { bg: C.info, fg: 'white', bold: true }, item: { hover: { bg: C.background } } },
       items: this.opts.menuItems
     });
 
@@ -153,7 +132,6 @@ class CryptoBotUI extends EventEmitter {
       this.emit('menu:select', label, index);
     });
 
-
     this.statsBox = blessed.box({
       parent: this.mainContainer, label: ' Statistics ',
       top: '40%', left: '30%', width: '35%', height: '30%',
@@ -161,7 +139,6 @@ class CryptoBotUI extends EventEmitter {
       style: { fg: C.text, border: { fg: C.orange }, label: { fg: C.orange, bold: true } },
       tags: true, padding: 1
     });
-
 
     this.logsBox = blessed.log({
       parent: this.mainContainer, label: ' Transaction Logs ',
@@ -172,7 +149,6 @@ class CryptoBotUI extends EventEmitter {
       style: { fg: C.text, border: { fg: C.purple }, label: { fg: C.purple, bold: true } },
       tags: true
     });
-
 
     this.activityBox = blessed.box({
       parent: this.mainContainer, label: ' Activity Monitor ',
@@ -189,7 +165,6 @@ class CryptoBotUI extends EventEmitter {
       style: { bg: C.background }
     });
 
-
     this.statusBar = blessed.box({
       parent: this.screen, bottom: 0, left: 0, width: '100%', height: 3,
       border: { type: 'line' },
@@ -198,19 +173,15 @@ class CryptoBotUI extends EventEmitter {
     });
     this.statusText = blessed.text({ parent: this.statusBar, left: 1, top: 0, tags: true, content: '' });
 
-
     this._wireKeys();
-
 
     this._refreshAll();
     this.transactionList.focus();
-
 
     this._viewportW = Math.max(1, this.screen.width || 80);
     this._buildTickerTape();
     this._scrollPos = 0;
     this._drawTickerFrame();
-
 
     this._every(1000, () => { this._drawStatus(); this.render(); });
     this._startTicker();
@@ -228,7 +199,6 @@ class CryptoBotUI extends EventEmitter {
     this._filelog('===== UI started =====');
   }
 
-
   _filelog(message) {
     try {
       const line = `[${new Date().toISOString()}] ${message}\n`;
@@ -243,7 +213,6 @@ class CryptoBotUI extends EventEmitter {
     this._filelog('===== switched log file =====');
   }
 
-
   render() { try { this.screen?.render(); } catch (_) {} }
   destroy(code = 0) {
     for (const id of this._intervals) clearInterval(id);
@@ -253,7 +222,6 @@ class CryptoBotUI extends EventEmitter {
     try { this.screen?.destroy(); } catch (_) {}
     process.exit(code);
   }
-
 
   setMenu(items = []) {
     this.transactionList.setItems(items);
@@ -368,7 +336,6 @@ class CryptoBotUI extends EventEmitter {
     }, delay);
   }
 
-
   _wireKeys() {
     this.screen.key(['s', 'S'], () => {
       this.setActive(!this.isActive);
@@ -384,7 +351,6 @@ class CryptoBotUI extends EventEmitter {
 
     this.screen.key(['l','L'], () => { this.log('info', `Log file: ${this.logFile}`); });
   }
-
 
   _setBannerFrame(text, font, colorHex) {
     this.banner.setContent(
@@ -404,7 +370,6 @@ class CryptoBotUI extends EventEmitter {
       this.render();
     });
   }
-
 
   _drawStats() {
     const C = this.opts.colors;
@@ -492,16 +457,13 @@ class CryptoBotUI extends EventEmitter {
     this.log('info', '================================', 400);
   }
 
-
   _every(ms, fn) {
     const id = setInterval(fn, ms);
     this._intervals.add(id);
     return id;
   }
 
-
   _buildTickerTape() {
-
     const w = this._viewportW || 80;
     const spacer = '   ';
     const leftPad  = ' '.repeat(w);
@@ -513,9 +475,8 @@ class CryptoBotUI extends EventEmitter {
     const unit = m1 + spacer + m2 + spacer;
 
     let tape = leftPad + unit;
-    while (tape.length < w * 4) tape += unit; 
+    while (tape.length < w * 4) tape += unit;
     tape += rightPad;
-
 
     const mask = new Array(tape.length).fill(0);
     const markAll = (haystack, needle, val) => {
@@ -552,7 +513,6 @@ class CryptoBotUI extends EventEmitter {
       sliceMask = this._tickerMask.slice(start).concat(this._tickerMask.slice(0, endLen));
     }
 
-
     let out = '';
     let cur = sliceMask[0] || 0;
     let buf = '';
@@ -578,7 +538,7 @@ class CryptoBotUI extends EventEmitter {
   _startTicker() {
     this._every(this.tickerSpeed, () => {
       if (this._tickerPaused) return;
-      this._scrollPos += 1;  
+      this._scrollPos += 1;
       this._drawTickerFrame();
       this.render();
     });
@@ -591,4 +551,5 @@ function pick(obj, keys) {
   return out;
 }
 
-module.exports = { CryptoBotUI };
+export { CryptoBotUI };
+export default CryptoBotUI;
