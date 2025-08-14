@@ -1,12 +1,10 @@
-// index.js — FastSet Testnet + CryptoBotUI (ESM)
 import fs from "fs";
 import path from "path";
 import axios from "axios";
+import blessed from "blessed";
 import { v4 as uuidv4 } from "uuid";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import { createInterface } from "readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import { createRequire } from "module";
 
 dotenv.config();
@@ -14,16 +12,15 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// === Import UI (CommonJS) ===
-const require = createRequire(import.meta.url);
-const { CryptoBotUI } = require("./ui.js");
 
-// === Konfigurasi API & default ===
+const require = createRequire(import.meta.url);
+const { CryptoBotUI } = require("./crypto-bot-ui.js");
+
+
 const API_BASE = "https://wallet.fastset.xyz/api/";
 let SENDS_PER_ACCOUNT = parseInt(process.env.SENDS_PER_ACCOUNT || "1", 10);
 let DELAY_SECONDS = parseInt(process.env.DELAY_SECONDS || "5", 10);
 
-// === Token testnet ===
 const tokens = [
   { name: "SET", tokenId: "Internal-FastSet", decimals: 0, faucetAmount: "98686" },
   { name: "USDC", tokenId: "ReFosxqpCeJTBuJXJOSoAFE8F4+fXpftTJBYs8qAaeI=", decimals: 6, faucetAmount: "1000000000" },
@@ -40,7 +37,7 @@ const sendRanges = {
   BTC: { min: 0.000003, max: 0.0000075 }
 };
 
-// === Bech32 decode (tanpa verifikasi checksum) ===
+
 const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 function from5to8(data) {
   let acc = 0n, bits = 0; const out = []; const maxv = (1 << 8) - 1;
@@ -64,7 +61,7 @@ function decodeBech32WithoutVerify(address) {
   return { publicBytes };
 }
 
-// === Helpers ===
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const randFloat = (min, max) => Math.random() * (max - min) + min;
 const short = (s) => (s ? s.slice(0, 6) + "..." + s.slice(-4) : "N/A");
@@ -99,13 +96,13 @@ async function makeApiCall(method, payload, { proxyUrl } = {}) {
   return res.data;
 }
 
-// === Account dari .env ===
+
 function buildAccount(privateKeyHex, bech32Address) {
   if (!/^[0-9a-fA-F]{64}$/.test(privateKeyHex)) throw new Error("PRIVATE_KEYS must be 64-hex per key (32 bytes)");
   const privateBytes = Buffer.from(privateKeyHex, "hex");
   const { publicBytes } = decodeBech32WithoutVerify(bech32Address);
-  const sender = publicBytes.toString("base64");       // 44 chars
-  const key = Buffer.concat([privateBytes, publicBytes]).toString("base64"); // 88 chars
+  const sender = publicBytes.toString("base64");
+  const key = Buffer.concat([privateBytes, publicBytes]).toString("base64"); 
   return { privateKeyHex, address: bech32Address, sender, key };
 }
 function loadAccountsFromEnv() {
@@ -127,7 +124,7 @@ function loadProxies() {
   return fs.readFileSync(p, "utf8").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 }
 
-// === Faucet & Transfer ===
+
 async function dripFaucet(account, token, opts = {}) {
   const sender = account.sender;
   const payload = {
@@ -146,7 +143,7 @@ async function dripFaucet(account, token, opts = {}) {
 async function performSend(account, token, amountHuman, { recipients, ownAddresses = [], proxyUrl } = {}) {
   if (!recipients?.length) throw new Error("No recipients loaded");
 
-  // pilih random recipient != own
+
   let to;
   for (let guard = 0; guard < 1000; guard++) {
     const cand = recipients[Math.floor(Math.random() * recipients.length)];
@@ -154,7 +151,6 @@ async function performSend(account, token, amountHuman, { recipients, ownAddress
   }
   if (!to) throw new Error("Unable to pick recipient different from own addresses");
 
-  // bech32 -> base64
   const { publicBytes } = decodeBech32WithoutVerify(to);
   const recipient = publicBytes.toString("base64");
   const sender = account.sender;
@@ -163,7 +159,7 @@ async function performSend(account, token, amountHuman, { recipients, ownAddress
 
   ui.log("pending", `Preparing ${amountHuman} ${token.name} -> ${short(to)}`);
 
-  // cek saldo
+
   const info = await makeApiCall("getAccountInfo", { sender }, { proxyUrl });
   const nextNonce = info.nextNonce;
   let bal = token.tokenId === "Internal-FastSet"
@@ -196,44 +192,133 @@ async function performSend(account, token, amountHuman, { recipients, ownAddress
   return to;
 }
 
-// === UI Instance ===
+
 const ui = new CryptoBotUI({
-  title: "FASTSET TESTNET • INVictusLabs",
+  title: "FASTSET WALLET",
   menuItems: [
-    "1. Mulai Transaksi",
-    "2. Ubah Param (Jumlah & Delay)",
+    "1. Running Transaction",
+    "2. Change Params (Amount TX & Delay)",
     "3. Reload wallet.txt",
-    "4. Tampilkan Saldo",
+    "4. Show Amount",
     "5. Clear Logs",
     "6. Exit"
   ],
-  tickerText1: "UOMI TESTNET",
-  tickerText2: "Join Telegram Channel : Invictuslabs - Airdrops",
+  tickerText1: "FASTSET WALLET - ",
+  tickerText2: "Join Telegram Channel : Invictuslabs - Airdrops - ",
   nativeSymbol: "SET",
   logFile: process.env.LOG_FILE || "transactions.log",
-  mirrorConsole: true
+  mirrorConsole: false
 });
 
-// === Sinkronisasi UI: wallet & token ===
+
+async function promptParamsInUI() {
+  const C = ui.opts.colors;
+  const screen = ui.screen;
+
+
+  const overlay = blessed.box({
+    parent: screen,
+    top: 0, left: 0, width: "100%", height: "100%",
+    style: { bg: ui.opts.colors.background },
+    transparent: false
+  });
+
+  const modal = blessed.box({
+    parent: overlay,
+    label: " Set Parameters ",
+    width: "60%", height: 13,
+    top: "center", left: "center",
+    border: { type: "line" },
+    style: { fg: C.text, bg: C.background, border: { fg: C.cyan }, label: { fg: C.cyan, bold: true } },
+    tags: true
+  });
+
+  const form = blessed.form({
+    parent: modal, keys: true, mouse: true, vi: true,
+    width: "100%-2", height: "100%-2",
+    left: 1, top: 1
+  });
+
+  blessed.text({
+    parent: form, left: 0, top: 0, tags: true,
+    content: `{${C.info}-fg}Masukkan jumlah tx/akun & delay (detik). Tab untuk pindah field, Enter di tombol OK.{/${C.info}-fg}`
+  });
+
+  blessed.text({ parent: form, left: 0, top: 2, content: "Jumlah transaksi per akun:" });
+  const tbCount = blessed.textbox({
+    parent: form, name: "count", inputOnFocus: true,
+    left: 0, top: 3, height: 3, width: "50%",
+    border: { type: "line" },
+    style: { fg: C.text, bg: C.background, border: { fg: "white" }, focus: { border: { fg: C.success } } }
+  });
+  tbCount.setValue(String(SENDS_PER_ACCOUNT));
+
+  blessed.text({ parent: form, left: 0, top: 6, content: "Delay per transaksi (detik):" });
+  const tbDelay = blessed.textbox({
+    parent: form, name: "delay", inputOnFocus: true,
+    left: 0, top: 7, height: 3, width: "50%",
+    border: { type: "line" },
+    style: { fg: C.text, bg: C.background, border: { fg: "white" }, focus: { border: { fg: C.success } } }
+  });
+  tbDelay.setValue(String(DELAY_SECONDS));
+
+  const btnOk = blessed.button({
+    parent: form, mouse: true, keys: true,
+    shrink: true, padding: { left: 2, right: 2 },
+    left: 0, top: 10, content: " OK ",
+    style: { fg: "black", bg: C.success, hover: { bg: "green" }, focus: { bg: "green" } }
+  });
+  const btnCancel = blessed.button({
+    parent: form, mouse: true, keys: true,
+    shrink: true, padding: { left: 2, right: 2 },
+    left: 8, top: 10, content: " Cancel ",
+    style: { fg: "black", bg: C.warning, hover: { bg: "yellow" }, focus: { bg: "yellow" } }
+  });
+
+  return new Promise((resolve) => {
+    const cleanup = () => { try { overlay.detach(); ui.transactionList?.focus(); ui.render(); } catch(_){} };
+
+    btnOk.on("press", () => form.submit());
+    btnCancel.on("press", () => { ui.log("info", "Batal ubah parameter"); cleanup(); resolve(false); });
+
+    form.on("submit", (data) => {
+      const count = data.count?.trim() ? parseInt(data.count.trim(), 10) : SENDS_PER_ACCOUNT;
+      const delay = data.delay?.trim() ? parseInt(data.delay.trim(), 10) : DELAY_SECONDS;
+      let changed = false;
+
+      if (Number.isInteger(count) && count > 0) {
+        SENDS_PER_ACCOUNT = count; changed = true;
+      } else {
+        ui.log("warning", "Jumlah tidak valid. Tetap.");
+      }
+      if (Number.isInteger(delay) && delay >= 0) {
+        DELAY_SECONDS = delay; changed = true;
+      } else {
+        ui.log("warning", "Delay tidak valid. Tetap.");
+      }
+
+      if (changed) ui.log("success", `Param di-set: ${SENDS_PER_ACCOUNT} tx/akun, delay ${DELAY_SECONDS}s`);
+      cleanup();
+      resolve(changed);
+    });
+
+    
+    tbCount.focus();
+    ui.render();
+  });
+}
+
+
 async function refreshBalancesFor(account, { proxyUrl } = {}) {
   try {
     const info = await makeApiCall("getAccountInfo", { sender: account.sender }, { proxyUrl });
     const setBal = BigInt(info.balance).toString();
-
     const tbal = (tid, dec) => {
       const raw = BigInt(info.tokenBalances?.[tid] || 0);
       if (dec === 0) return raw.toString();
       const n = Number(raw) / (10 ** dec);
       return n.toFixed(Math.min(6, dec));
     };
-
-    const displayTokens = [
-      { enabled: true, name: "SET", symbol: "SET", balance: setBal },
-      { enabled: true, name: "USDC", symbol: "USDC", balance: tbal(tokens[1].tokenId, tokens[1].decimals) },
-      { enabled: true, name: "ETH",  symbol: "ETH",  balance: tbal(tokens[2].tokenId, tokens[2].decimals) },
-      { enabled: true, name: "SOL",  symbol: "SOL",  balance: tbal(tokens[3].tokenId, tokens[3].decimals) },
-      { enabled: true, name: "BTC",  symbol: "BTC",  balance: tbal(tokens[4].tokenId, tokens[4].decimals) }
-    ];
 
     ui.updateWallet({
       address: account.address,
@@ -242,26 +327,18 @@ async function refreshBalancesFor(account, { proxyUrl } = {}) {
       gasPrice: "-",
       nonce: String(info.nextNonce ?? "-")
     });
-    ui.setTokens(displayTokens);
+    ui.setTokens([
+      { enabled: true, name: "SET", symbol: "SET", balance: setBal },
+      { enabled: true, name: "USDC", symbol: "USDC", balance: tbal(tokens[1].tokenId, tokens[1].decimals) },
+      { enabled: true, name: "ETH",  symbol: "ETH",  balance: tbal(tokens[2].tokenId, tokens[2].decimals) },
+      { enabled: true, name: "SOL",  symbol: "SOL",  balance: tbal(tokens[3].tokenId, tokens[3].decimals) },
+      { enabled: true, name: "BTC",  symbol: "BTC",  balance: tbal(tokens[4].tokenId, tokens[4].decimals) }
+    ]);
   } catch (e) {
     ui.log("error", `Gagal ambil saldo: ${e.message}`);
   }
 }
 
-// === Prompt param ===
-async function promptParams() {
-  const rl = createInterface({ input, output });
-  try {
-    const c = await rl.question(`Jumlah transaksi per akun? (Enter=${SENDS_PER_ACCOUNT}): `);
-    const d = await rl.question(`Delay antar transaksi (detik)? (Enter=${DELAY_SECONDS}): `);
-    const count = c.trim() === "" ? SENDS_PER_ACCOUNT : parseInt(c.trim(), 10);
-    const delay = d.trim() === "" ? DELAY_SECONDS : parseInt(d.trim(), 10);
-    if (Number.isInteger(count) && count > 0) SENDS_PER_ACCOUNT = count; else ui.log("warning", "Jumlah tidak valid, pakai default.");
-    if (Number.isInteger(delay) && delay >= 0) DELAY_SECONDS = delay; else ui.log("warning", "Delay tidak valid, pakai default.");
-  } finally { await rl.close(); }
-}
-
-// === Runner Transaksi (per batch, kembali ke menu saat selesai) ===
 async function runBatch({ accounts, recipients, proxies, ownAddresses }) {
   ui.setActive(true);
   ui.updateStats({ pendingTx: 0 });
@@ -292,7 +369,6 @@ async function runBatch({ accounts, recipients, proxies, ownAddresses }) {
         ui.updateStats({ pendingTx: Math.max(0, (ui.pendingTx || 1) - 1) });
       }
 
-      // update stats & saldo
       ui.updateStats({
         transactionCount: (ui.transactionCount || 0) + 1,
         failedTx: fail,
@@ -316,7 +392,7 @@ async function runBatch({ accounts, recipients, proxies, ownAddresses }) {
   ui.setActive(false);
 }
 
-// === Main & Menu ===
+
 let accounts = [];
 let recipients = [];
 let proxies = [];
@@ -333,9 +409,7 @@ async function init() {
     ui.log("success", `Loaded ${recipients.length} recipient(s) from wallet.txt`);
     if (proxies.length) ui.log("info", `Loaded ${proxies.length} proxy(ies)`);
 
-    // tampilkan saldo akun pertama saat start
     await refreshBalancesFor(accounts[0], { proxyUrl: proxies[0] });
-
   } catch (e) {
     ui.log("error", e.message);
   }
@@ -347,8 +421,7 @@ ui.on("menu:select", async (label) => {
     if (plain.startsWith("1.")) {
       await runBatch({ accounts, recipients, proxies, ownAddresses });
     } else if (plain.startsWith("2.")) {
-      await promptParams();
-      ui.log("success", `Param di-set: ${SENDS_PER_ACCOUNT} tx/akun, delay ${DELAY_SECONDS}s`);
+      await promptParamsInUI(); 
     } else if (plain.startsWith("3.")) {
       try {
         recipients = loadRecipients("wallet.txt");
@@ -368,5 +441,6 @@ ui.on("menu:select", async (label) => {
     ui.log("error", e.message);
   }
 });
+
 
 await init();
